@@ -1,16 +1,9 @@
 name = "telegram-notification-mcp"
-account_id = "f39ef6c40c699c5192212d93ac8b64cb"
 main = "src/index.ts"
 compatibility_date = "2025-03-10"
 compatibility_flags = ["nodejs_compat"]
-
-[[migrations]]
-new_sqlite_classes = ["TelegramMCP"]
-tag = "v1"
-
-[[migrations]]
-deleted_classes = ["TelegramMCP"]
-tag = "v2"
+workers_dev = false
+preview_urls = false
 
 [observability]
-enabled = true
+enabled = false
