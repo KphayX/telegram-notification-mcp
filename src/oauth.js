@@ -21,7 +21,7 @@ export function isAuthorizedGrant(ctx) {
     Array.isArray(ctx.auth.scope) && ctx.auth.scope.includes(SCOPE);
 }
 
-function escape(value) {
+function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => "&#" + char.charCodeAt(0) + ";");
 }
 
@@ -57,14 +57,14 @@ async function authorize(request, env) {
     const original = await oauth.parseAuthRequest(request);
     const details = await oauth.describeConsent(original);
     const consent = await oauth.beginConsent(original);
-    const domain = details.clientDomain ? escape(details.clientDomain) : "Self-registered client; name not verified";
+    const domain = details.clientDomain ? escapeHtml(details.clientDomain) : "Self-registered client; name not verified";
     const warning = details.redirectIsLoopback ? "<p>Local app: continue only if you started this login.</p>" : "";
     const html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Telegram Notification</title>' +
-      '<h1>Authorize Telegram Notification</h1><p>Client: <strong>' + escape(details.clientName) +
-      '</strong></p><p>Client domain: ' + domain + '</p><p>Redirect host: ' + escape(details.redirectHost) +
+      '<h1>Authorize Telegram Notification</h1><p>Client: <strong>' + escapeHtml(details.clientName) +
+      '</strong></p><p>Client domain: ' + domain + '</p><p>Redirect host: ' + escapeHtml(details.redirectHost) +
       '</p><p>Permission: send messages to the configured Telegram recipient (' + SCOPE + ').</p>' +
       warning + '<form method="post" action="/authorize"><input type="hidden" name="handle" value="' +
-      escape(consent.handle) + '"><button name="decision" value="approve">Continue with GitHub</button> ' +
+      escapeHtml(consent.handle) + '"><button name="decision" value="approve">Continue with GitHub</button> ' +
       '<button name="decision" value="deny">Deny</button></form></html>';
     const headers = safeHeaders(consent.headers);
     headers.set("Content-Type", "text/html; charset=utf-8");
