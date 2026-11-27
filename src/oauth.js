@@ -12,12 +12,13 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => "&#" + char.charCodeAt(0) + ";");
 }
 
+// Chromium applies form-action to POST redirects too. Allow only the known OAuth origins.
 function safeHeaders(headers = new Headers()) {
   headers.set("Cache-Control", "no-store");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  headers.set("Content-Security-Policy", "default-src 'none'; form-action 'self' https://github.com https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'");
   return headers;
 }
 
