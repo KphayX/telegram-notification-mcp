@@ -38,12 +38,52 @@ function configured(env) {
   return Boolean(env.OAUTH_KV && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
 }
 
+// Report only fixed diagnostic codes; never echo tokens, cookies, URLs or raw exceptions.
+class OAuthFlowError extends Error {
+  constructor(stage, cause) {
+    super("OAuth flow failed");
+    this.stage = stage;
+    const description = typeof cause?.description === "string" ? cause.description : "";
+    this.code = description.includes("not started in this browser") ||
+      description.includes("different browser session") ? "BROWSER_SESSION_MISMATCH" :
+      description.includes("expired or was already used") ? "TRANSACTION_NOT_FOUND" :
+      description.includes("Missing transaction handle") || description.includes("Missing state parameter") ? "TRANSACTION_MISSING" :
+      description.includes("Approved scopes must") ? "INVALID_SCOPE" :
+      "REQUEST_FAILED";
+  }
+}
+
+async function flowStep(stage, action) {
+  try {
+    return await action();
+  } catch (error) {
+    throw new OAuthFlowError(stage, error);
+  }
+}
+
+function flowErrorResponse(error) {
+  const stage = error instanceof OAuthFlowError ? error.stage : "REQUEST";
+  const code = error instanceof OAuthFlowError ? error.code : "REQUEST_FAILED";
+  const advice = code === "BROWSER_SESSION_MISMATCH" ?
+    "Allow first-party cookies for this site and restart the connection in the same browser." :
+    code === "TRANSACTION_NOT_FOUND" ?
+      "The session expired, was already used, or is not yet visible in KV. Restart from ChatGPT; do not reuse the old page." :
+      "Restart the connection from your MCP client.";
+  return new Response(`Authorization failed [${stage}:${code}]. ${advice}`, {
+    status: 400,
+    headers: safeHeaders(),
+  });
+}
+
 async function authorize(request, env) {
   const oauth = env.OAUTH_PROVIDER;
   if (request.method === "GET") {
-    const original = await oauth.parseAuthRequest(request);
-    const details = await oauth.describeConsent(original);
-    const consent = await oauth.beginConsent(original);
+    if (!new URL(request.url).searchParams.has("client_id")) {
+      return new Response("Start authorization from your MCP client. This URL cannot be opened directly. [AUTHORIZE:CLIENT_ID_MISSING]", { status: 400, headers: safeHeaders() });
+    }
+    const original = await flowStep("PARSE_REQUEST", () => oauth.parseAuthRequest(request));
+    const details = await flowStep("CLIENT_METADATA", () => oauth.describeConsent(original));
+    const consent = await flowStep("BEGIN_CONSENT", () => oauth.beginConsent(original));
     const domain = details.clientDomain ? escapeHtml(details.clientDomain) : "Self-registered client; name not verified";
     const warning = details.redirectIsLoopback ? "<p>Local app: continue only if you started this login.</p>" : "";
     const html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Telegram Notification</title>' +
@@ -58,18 +98,18 @@ async function authorize(request, env) {
     return new Response(html, { headers });
   }
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-  const form = await request.formData();
+  const form = await flowStep("CONSENT_FORM", () => request.formData());
   const handle = form.get("handle");
   if (typeof handle !== "string" || !handle) return new Response("Invalid consent", { status: 400 });
   if (form.get("decision") !== "approve") {
-    const rejected = await oauth.denyConsent(request, handle);
+    const rejected = await flowStep("DENY_CONSENT", () => oauth.denyConsent(request, handle));
     return new Response(null, { status: 302, headers: safeHeaders(rejected.headers) });
   }
-  const approved = await oauth.approveConsent(request, handle, { scope: [SCOPE] });
+  const approved = await flowStep("APPROVE_CONSENT", () => oauth.approveConsent(request, handle, { scope: [SCOPE] }));
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   const challenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const upstream = await oauth.beginUpstream(approved.request, { data: { verifier }, headers: approved.headers });
+  const upstream = await flowStep("BEGIN_GITHUB", () => oauth.beginUpstream(approved.request, { data: { verifier }, headers: approved.headers }));
   const url = new URL("https://github.com/login/oauth/authorize");
   url.search = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
@@ -84,7 +124,7 @@ async function authorize(request, env) {
 
 async function finish(request, env) {
   const oauth = env.OAUTH_PROVIDER;
-  const { request: original, data, headers } = await oauth.finishUpstream(request);
+  const { request: original, data, headers } = await flowStep("GITHUB_CALLBACK", () => oauth.finishUpstream(request));
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   if (!code || url.searchParams.has("error") || typeof data?.verifier !== "string") return deny(original, headers);
@@ -137,8 +177,8 @@ export function createOAuthRouter(handleMcp) {
           if (path === "/authorize") return await authorize(request, env);
           if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
           return await finish(request, env);
-        } catch {
-          return new Response("Authorization could not be completed. Start again from your MCP client.", { status: 400, headers: safeHeaders() });
+        } catch (error) {
+          return flowErrorResponse(error);
         }
       },
     },
