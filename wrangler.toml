@@ -1,9 +1,13 @@
 name = "telegram-notification-mcp"
 main = "src/index.ts"
 compatibility_date = "2025-03-10"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = true
 preview_urls = false
 
 [observability]
 enabled = false
+
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "59c1f46e84724233b3618ff7e158f335"

@@ -21,6 +21,9 @@ declare global {
 			DEFAULT_CHAT_ID?: string;
 			/** Shared bearer token required by clients connecting to the MCP endpoint */
 			MCP_AUTH_TOKEN: string;
+			OAUTH_KV: KVNamespace;
+			GITHUB_CLIENT_ID?: string;
+			GITHUB_CLIENT_SECRET?: string;
 		}
 		interface GlobalProps {
 			mainModule: typeof import("./index");

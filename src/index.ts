@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 import { sendTelegramMessage } from "./telegram";
+import { createOAuthRouter, OAUTH_PATH } from "./oauth.js";
 
 const MCP_ENDPOINT_PATH = "/mcp";
 const LEGACY_SSE_ENDPOINT_PATH = "/sse";
@@ -155,6 +156,10 @@ function unauthorizedResponse(): Response {
 	);
 }
 
+const oauthRouter = createOAuthRouter((request: Request, environment: Env, context: ExecutionContext) =>
+	createMcpHandler(() => createTelegramMcpServer(environment), { route: OAUTH_PATH })(request, environment, context),
+);
+
 export default {
 	async fetch(request: Request, environment: Env, context: ExecutionContext) {
 		const url = new URL(request.url);
@@ -167,7 +172,7 @@ export default {
 		}
 
 		if (url.pathname !== MCP_ENDPOINT_PATH) {
-			return new Response("Not found", { status: 404 });
+			return oauthRouter.fetch(request, environment, context);
 		}
 
 		if (!environment.MCP_AUTH_TOKEN) {

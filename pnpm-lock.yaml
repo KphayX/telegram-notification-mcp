@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cloudflare/workers-oauth-provider':
+        specifier: 1.4.0
+        version: 1.4.0
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -41,6 +44,9 @@ importers:
         version: 4.60.0(@cloudflare/workers-types@4.20260702.1)
 
 packages:
+
+  '@cloudflare/workers-oauth-provider@1.4.0':
+    resolution: {tarball: https://registry.npmjs.org/@cloudflare/workers-oauth-provider/-/workers-oauth-provider-1.4.0.tgz}
 
   '@babel/code-frame@8.0.0':
     resolution: {integrity: sha512-dYYg153EyN2Ekbqw2zAsbd6/JR+9N2SEoC7YV2GyyqMM7x9bLDTjBD6XBhSMLH0wtIVyJj03jWNriQhaN+eoCw==}
@@ -1862,6 +1868,8 @@ packages:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
 snapshots:
+
+  '@cloudflare/workers-oauth-provider@1.4.0': {}
 
   '@babel/code-frame@8.0.0':
     dependencies:
