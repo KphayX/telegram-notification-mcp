@@ -6,20 +6,7 @@ export const OAUTH_PATH = "/mcp-oauth";
 const ORIGIN = "https://telegram-notification-mcp.dvson-dev.workers.dev";
 const RESOURCE = ORIGIN + OAUTH_PATH;
 const CALLBACK = ORIGIN + "/callback";
-const SCOPE = "telegram:publish";
-const USER_ID = 106802443;
-const USER_LOGIN = "kphayx";
-
-export function isAllowedIdentity(user) {
-  return user?.id === USER_ID && typeof user.login === "string" &&
-    user.login.toLowerCase() === USER_LOGIN;
-}
-
-export function isAuthorizedGrant(ctx) {
-  return isAllowedIdentity({ id: ctx.props?.githubId, login: ctx.props?.githubLogin }) &&
-    ctx.auth?.userId === "github-" + USER_ID &&
-    Array.isArray(ctx.auth.scope) && ctx.auth.scope.includes(SCOPE);
-}
+import { SCOPE, USER_ID, isAllowedIdentity, isAuthorizedGrant } from "./oauth-identity.js";
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => "&#" + char.charCodeAt(0) + ";");

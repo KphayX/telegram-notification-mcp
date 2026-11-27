@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedIdentity, isAuthorizedGrant } from "./oauth.js";
+import { isAllowedIdentity, isAuthorizedGrant } from "./oauth-identity.js";
 
 describe("OAuth allowlist", () => {
 	it("requires both immutable ID and login", () => {
