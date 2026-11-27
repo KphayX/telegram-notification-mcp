@@ -11,23 +11,23 @@ const LEGACY_SSE_ENDPOINT_PATH = "/sse";
 function createTelegramMcpServer(environment: Env): McpServer {
 	const server = new McpServer({
 		name: "Telegram Notification MCP",
-		version: "1.1.0",
+		version: "1.1.1",
 	});
 
 	server.registerTool(
 		"send_telegram_message",
 		{
-			description: "Send a notification through the configured Telegram bot.",
+			description: "Send a notification to the fixed, administrator-configured Telegram recipient.",
+			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
 			inputSchema: {
-				text: z.string().min(1),
-				chat_id: z.union([z.number(), z.string()]).optional(),
+				text: z.string().trim().min(1).max(4096),
 				parse_mode: z.enum(["Markdown", "HTML"]).optional(),
 				disable_notification: z.boolean().optional(),
 			},
 		},
-		async ({ text, chat_id, parse_mode, disable_notification }) => {
+		async ({ text, parse_mode, disable_notification }) => {
 			const botToken = environment.BOT_TOKEN;
-			const targetChatId = chat_id ?? environment.DEFAULT_CHAT_ID;
+			const targetChatId = environment.DEFAULT_CHAT_ID?.trim();
 
 			if (!botToken) {
 				return {
@@ -36,12 +36,12 @@ function createTelegramMcpServer(environment: Env): McpServer {
 				};
 			}
 
-			if (!targetChatId) {
+			if (!targetChatId || !/^-?[1-9]\d{0,15}$/.test(targetChatId)) {
 				return {
 					content: [
 						{
 							type: "text",
-							text: "No chat_id was provided and DEFAULT_CHAT_ID is not configured",
+							text: "DEFAULT_CHAT_ID must contain a valid numeric Telegram chat ID",
 						},
 					],
 					isError: true,
@@ -77,12 +77,12 @@ function createTelegramMcpServer(environment: Env): McpServer {
 						},
 					],
 				};
-			} catch (error) {
+			} catch {
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Error sending message: ${error instanceof Error ? error.message : "Unknown error"}`,
+							text: "Telegram delivery could not be confirmed. Do not retry blindly.",
 						},
 					],
 					isError: true,
