@@ -113,7 +113,7 @@ async function authorize(request, env) {
   const upstream = await flowStep("BEGIN_GITHUB", () => oauth.beginUpstream(approved.request, { data: { verifier }, headers: approved.headers }));
   const url = new URL("https://github.com/login/oauth/authorize");
   url.search = new URLSearchParams({
-    client_id: env.GITHUB_CLIENT_ID,
+    client_id: env.GITHUB_CLIENT_ID.trim(),
     redirect_uri: CALLBACK,
     scope: "read:user",
     state: upstream.state,
@@ -123,38 +123,79 @@ async function authorize(request, env) {
   return redirect(url.href, upstream.headers);
 }
 
+// Record only fixed diagnostic enums, with no credential, identity, URL or session data.
+// Short TTL and unique keys avoid overwriting a concurrent callback.
+async function recordCallbackOutcome(env, outcome) {
+  try {
+    await env.OAUTH_KV.put(`diagnostic:callback:${crypto.randomUUID()}`, outcome, {
+      expirationTtl: 1800,
+      metadata: { outcome, at: new Date().toISOString() },
+    });
+  } catch {
+    // Diagnostics must not block authentication.
+  }
+}
+
 async function finish(request, env) {
   const oauth = env.OAUTH_PROVIDER;
-  const { request: original, data, headers } = await flowStep("GITHUB_CALLBACK", () => oauth.finishUpstream(request));
+  let resumed;
+  try {
+    resumed = await flowStep("GITHUB_CALLBACK", () => oauth.finishUpstream(request));
+  } catch (error) {
+    await recordCallbackOutcome(env, error instanceof OAuthFlowError ? `CALLBACK_${error.code}` : "CALLBACK_FAILED");
+    throw error;
+  }
+  const { request: original, data, headers } = resumed;
+  const reject = async (outcome) => {
+    await recordCallbackOutcome(env, outcome);
+    return deny(original, headers);
+  };
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  if (!code || url.searchParams.has("error") || typeof data?.verifier !== "string") return deny(original, headers);
+  if (!code || url.searchParams.has("error") || typeof data?.verifier !== "string") {
+    return reject("GITHUB_CODE_MISSING_OR_DENIED");
+  }
+  let stage = "GITHUB_TOKEN_EXCHANGE";
   try {
     const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "telegram-notification-mcp" },
       body: new URLSearchParams({
-        client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET,
+        client_id: env.GITHUB_CLIENT_ID.trim(), client_secret: env.GITHUB_CLIENT_SECRET.trim(),
         code, redirect_uri: CALLBACK, code_verifier: data.verifier,
       }),
       redirect: "error",
     });
     const token = await tokenResponse.json();
-    if (!tokenResponse.ok || typeof token.access_token !== "string") return deny(original, headers);
+    if (!tokenResponse.ok || typeof token.access_token !== "string") {
+      const known = {
+        incorrect_client_credentials: "GITHUB_INCORRECT_CLIENT_CREDENTIALS",
+        redirect_uri_mismatch: "GITHUB_REDIRECT_URI_MISMATCH",
+        bad_verification_code: "GITHUB_BAD_VERIFICATION_CODE",
+        unverified_user_email: "GITHUB_UNVERIFIED_USER_EMAIL",
+        incorrect_code_verifier: "GITHUB_INCORRECT_CODE_VERIFIER",
+        bad_code_verifier: "GITHUB_BAD_CODE_VERIFIER",
+      };
+      return reject(Object.hasOwn(known, token.error) ? known[token.error] : "GITHUB_TOKEN_REJECTED");
+    }
+    stage = "GITHUB_PROFILE_FETCH";
     const profileResponse = await fetch("https://api.github.com/user", {
-      headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token.access_token,
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token.access_token}`,
         "User-Agent": "telegram-notification-mcp", "X-GitHub-Api-Version": "2022-11-28" },
       redirect: "error",
     });
+    if (!profileResponse.ok) return reject("GITHUB_PROFILE_REJECTED");
     const profile = await profileResponse.json();
-    if (!profileResponse.ok || !isAllowedIdentity(profile)) return deny(original, headers);
+    if (!isAllowedIdentity(profile)) return reject("GITHUB_IDENTITY_NOT_ALLOWED");
+    stage = "MCP_GRANT_CREATE";
     const result = await oauth.completeAuthorization({
-      request: original, userId: "github-" + USER_ID, metadata: { label: "KphayX" },
+      request: original, userId: `github-${USER_ID}`, metadata: { label: "KphayX" },
       scope: [SCOPE], props: { githubId: profile.id, githubLogin: profile.login },
     });
+    await recordCallbackOutcome(env, "MCP_GRANT_CREATED");
     return redirect(result.redirectTo, headers);
   } catch {
-    return deny(original, headers);
+    return reject(`${stage}_FAILED`);
   }
 }
 
