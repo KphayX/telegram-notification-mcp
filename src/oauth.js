@@ -164,9 +164,12 @@ async function finish(request, env) {
         client_id: env.GITHUB_CLIENT_ID.trim(), client_secret: env.GITHUB_CLIENT_SECRET.trim(),
         code, redirect_uri: CALLBACK, code_verifier: data.verifier,
       }),
-      redirect: "error",
+      redirect: "manual",
     });
+    if (tokenResponse.status >= 300 && tokenResponse.status < 400) return reject("GITHUB_TOKEN_REDIRECT_BLOCKED");
+    stage = "GITHUB_TOKEN_RESPONSE_PARSE";
     const token = await tokenResponse.json();
+    if (!token || typeof token !== "object") return reject("GITHUB_TOKEN_INVALID_RESPONSE");
     if (!tokenResponse.ok || typeof token.access_token !== "string") {
       const known = {
         incorrect_client_credentials: "GITHUB_INCORRECT_CLIENT_CREDENTIALS",
@@ -182,9 +185,11 @@ async function finish(request, env) {
     const profileResponse = await fetch("https://api.github.com/user", {
       headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token.access_token}`,
         "User-Agent": "telegram-notification-mcp", "X-GitHub-Api-Version": "2022-11-28" },
-      redirect: "error",
+      redirect: "manual",
     });
+    if (profileResponse.status >= 300 && profileResponse.status < 400) return reject("GITHUB_PROFILE_REDIRECT_BLOCKED");
     if (!profileResponse.ok) return reject("GITHUB_PROFILE_REJECTED");
+    stage = "GITHUB_PROFILE_RESPONSE_PARSE";
     const profile = await profileResponse.json();
     if (!isAllowedIdentity(profile)) return reject("GITHUB_IDENTITY_NOT_ALLOWED");
     stage = "MCP_GRANT_CREATE";
